@@ -12,13 +12,13 @@ pyrobosim is a ROS2 enabled 2D mobile robot simulator for behavior prototyping.
 |
 
 .. toctree::
-   :maxdepth: 4
+   :maxdepth: 2
    :caption: Contents:
 
    concepts
    setup
-   usage
-   yaml_schemas
+   usage/index
+   yaml/index
    api
 
 
