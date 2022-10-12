@@ -7,7 +7,8 @@ from pddlstream.language.constants import And, PDDLProblem
 from pddlstream.utils import read
 
 from .mappings import get_stream_info, get_stream_map
-from .utils import world_to_pddlstream_init, pddlstream_solution_to_plan
+from .utils import process_goal_specification, world_to_pddlstream_init, \
+    pddlstream_solution_to_plan
 
 
 class PDDLStreamPlanner:
@@ -37,6 +38,7 @@ class PDDLStreamPlanner:
 
     def plan(
         self,
+        robot,
         goal_literals,
         focused=True,
         planner="ff-astar",
@@ -49,6 +51,8 @@ class PDDLStreamPlanner:
         Searches for a set of actions that completes a goal specification
         given an initial state of the world.
 
+        :param robot: Robot to use for planning.
+        :type robot: :class:`pyrobosim.core.robot.Robot`
         :param goal_literals: List of literals describing a goal specification.
         :type goal_literals: list[tuple]
         :param focused: If True (default), uses the focused algorithm; else, uses incremental.
@@ -67,7 +71,8 @@ class PDDLStreamPlanner:
         :rtype: :class:`pyrobosim.planning.actions.TaskPlan`
         """
         # Set the initial and goal states for PDDLStream
-        init = world_to_pddlstream_init(self.world)
+        init = world_to_pddlstream_init(self.world, robot)
+        process_goal_specification(goal_literals, self.world)
         goal = And(*goal_literals)
         self.latest_specification = goal
 
@@ -80,7 +85,7 @@ class PDDLStreamPlanner:
             self.domain_pddl,
             constant_map,
             external_pddl,
-            get_stream_map(self.world),
+            get_stream_map(self.world, robot),
             init,
             goal,
         )
@@ -106,7 +111,7 @@ class PDDLStreamPlanner:
             )
 
         # Convert the solution to a TaskPlan object.
-        plan_out = pddlstream_solution_to_plan(solution)
+        plan_out = pddlstream_solution_to_plan(solution, robot.name)
         self.latest_plan = plan_out
         if verbose:
             print("\nInitial conditions:")
