@@ -44,7 +44,10 @@ class ConstantVelocityExecutor:
         """
         if self.robot is None:
             warnings.warn("No robot attached to execute the trajectory.")
-            return
+            return False
+        elif path.num_poses < 2:
+            warnings.warn("Not enough waypoints in path to execute.")
+            return False
         self.robot.executing_nav = True
 
         # Convert the path to an interpolated trajectory
@@ -60,12 +63,15 @@ class ConstantVelocityExecutor:
         is_holding_object = self.robot.manipulated_object is not None
         for i in range(len(traj_t)):
             start_time = time.time()
-            cur_pose = Pose(x=traj_x[i], y=traj_y[i], yaw=traj_yaw[i])
+            cur_pose = Pose(x=traj_x[i], y=traj_y[i], z=0.0, yaw=traj_yaw[i])
             self.robot.set_pose(cur_pose)
             if is_holding_object:
                 self.robot.manipulated_object.set_pose(cur_pose)
             time.sleep(max(0, sleep_time - (time.time() - start_time)))
 
         # Finalize path execution
+        time.sleep(0.1)  # To ensure background threads get the end of the path.
         self.robot.executing_nav = False
+        self.robot.executing_action = False
+        self.robot.current_action = None
         return True

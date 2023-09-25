@@ -5,8 +5,8 @@
 # WORLD PARAMETERS
 params:
   name: pddlstream_simple_world
-  object_radius: 0.05 # Radius around objects
-  wall_height: 2.0 # Wall height for exporting to Gazebo
+  object_radius: 0.0375  # Radius around objects
+  wall_height: 2.0  # Wall height for exporting to Gazebo
 
 
 # METADATA: Describes information about locations and objects
@@ -15,26 +15,32 @@ metadata:
   objects: $DATA/example_object_data.yaml
 
 
-# ROBOTS: For now, we only support a single robot
+# ROBOTS
 robots:
-  - id: 0
+  - name: robot
     radius: 0.1
     location: kitchen
     pose: [0, 0, 0]
     path_planner:
       type: rrt
-      max_connection_dist: 0.25
+      collision_check_step_dist: 0.025
+      max_connection_dist: 1.0
       bidirectional: false
       rrt_star: true
       rewire_radius: 1.5
-
-
-# PLANNING: Global planner
-global_path_planner:
-  # Search graph planner from manually specified nodes
-  type: search_graph
-  max_edge_dist: 3.0
-  collision_check_dist: 0.05
+      compress_path: false
+    path_executor:
+      type: constant_velocity
+      linear_velocity: 1.0
+      max_angular_velocity: 4.0
+      dt: 0.1
+    grasping:
+      generator: parallel_grasp
+      max_width: 0.15
+      depth: 0.1
+      height: 0.04
+      width_clearance: 0.01
+      depth_clearance: 0.01
 
 
 # ROOMS: Polygonal regions that can contain object locations
@@ -74,20 +80,20 @@ rooms:
 
 # HALLWAYS: Connect rooms
 hallways:
-  - from: kitchen
-    to: bathroom
+  - room_start: kitchen
+    room_end: bathroom
     width: 0.7
     conn_method: auto
-  
-  - from: bathroom
-    to: bedroom
+
+  - room_start: bathroom
+    room_end: bedroom
     width: 0.5
     conn_method: angle
     conn_angle: 0.0
     offset: 0.8
-  
-  - from: kitchen
-    to: bedroom
+
+  - room_start: kitchen
+    room_end: bedroom
     width: 0.6
     conn_method: points
     conn_points:
@@ -98,40 +104,40 @@ hallways:
 
 # LOCATIONS: Can contain objects
 locations:
-  - type: table
-    room: kitchen
-    pose: [0.85, -0.5, -1.57]
+  - category: table
+    parent: kitchen
+    pose: [0.85, -0.5, 0.0, -1.57]
 
-  - type: desk
-    room: bedroom
-    pose: [3.15, 3.65, 0.0]
+  - category: desk
+    parent: bedroom
+    pose: [3.15, 3.65, 0.0, 0.0]
 
-  - type: counter
-    room: bathroom
-    pose: [-2.45, 2.5, 1.767]
+  - category: counter
+    parent: bathroom
+    pose: [-2.45, 2.5, 0.0, 1.767]
 
 
-# OBJECTS: Can be picked, placed, and move by robot
+# OBJECTS: Can be picked, placed, and moved by robot
 objects:
-  - type: banana
-    location: table0
-    pose: [1.0, -0.5, 0.707]
+  - category: banana
+    parent: table0
+    pose: [1.0, -0.5, 0.0, 0.707]
 
-  - type: apple
-    location: desk0
-    pose: [3.2, 3.5, 0.0]
+  - category: apple
+    parent: desk0
+    pose: [3.2, 3.5, 0.0, 0.0]
 
-  - type: apple
-    location: table0
+  - category: apple
+    parent: table0
 
-  - type: apple
-    location: table0
+  - category: apple
+    parent: table0
 
-  - type: water
-    location: counter0
+  - category: water
+    parent: counter0
 
-  - type: banana
-    location: counter0
+  - category: banana
+    parent: counter0
 
-  - type: water
-    location: desk0
+  - category: water
+    parent: desk0

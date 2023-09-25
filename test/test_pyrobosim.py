@@ -2,13 +2,16 @@
 Basic sanity checks for pyrobosim module.
 """
 
-import pytest
+import sys
 from importlib.metadata import version
+
 
 def test_import():
     import pyrobosim
-    assert("__init__.py" in pyrobosim.__file__)
+
+    assert "pyrobosim" in sys.modules
+
 
 def test_version():
     ver = version("pyrobosim")
-    assert(ver == "0.0.0"), "Incorrect pyrobosim version"
+    assert ver == "1.0.0", "Incorrect pyrobosim version"
