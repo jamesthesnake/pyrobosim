@@ -7,18 +7,15 @@ import sys
 import warnings
 import numpy as np
 
-from ..core.locations import Location, ObjectSpawn
-from ..core.objects import Object
 
-
-def apply_resolution_strategy(world, entity_list, resolution_strategy, robot=None):
+def apply_resolution_strategy(entity_list, resolution_strategy, robot=None):
     """
-    Accepts a list of entities in the world (e.g. rooms, objects, etc.) and 
-    applies a resolution strategy to get a single entity from that list that best 
+    Accepts a list of entities in the world (e.g. rooms, objects, etc.) and
+    applies a resolution strategy to get a single entity from that list that best
     meets one of the following criteria:
-    
+
     - ``"first"`` : Return the first entity that meets this query
-    - ``"random"`` : Return a random entity from all possible options 
+    - ``"random"`` : Return a random entity from all possible options
     - ``"nearest"`` : Return the nearest entity based on robot pose (So, a robot must exist in the world)
 
     :param world: World model.
@@ -57,10 +54,9 @@ def apply_resolution_strategy(world, entity_list, resolution_strategy, robot=Non
         return None
 
 
-def query_to_entity(world, query_list, mode,
-                    resolution_strategy="first", robot=None):
-    """ 
-    Resolves a generic query list of strings to an entity 
+def query_to_entity(world, query_list, mode, resolution_strategy="first", robot=None):
+    """
+    Resolves a generic query list of strings to an entity
     mode can be "location" or "object"
 
     :param world: World model.
@@ -76,6 +72,9 @@ def query_to_entity(world, query_list, mode,
     :return: The entity that meets the mode and resolution strategy, or None.
     :rtype: Entity
     """
+    from ..core.locations import Location, ObjectSpawn
+    from ..core.objects import Object
+
     room = None
     named_location = None
     loc_category = None
@@ -83,14 +82,17 @@ def query_to_entity(world, query_list, mode,
 
     # Direct name search
     entity_list = []
+    resolved_queries = set()
     for elem in query_list:
         # First, directly search for location/object spawn names
         for loc in world.locations:
             if elem == loc.name:
                 named_location = loc
+                resolved_queries.add(elem)
             for spawn in loc.children:
                 if elem == spawn.name:
                     named_location = spawn
+                    resolved_queries.add(elem)
         # Then, directly search for object names and get the location
         for obj in world.objects:
             if elem == obj.name:
@@ -103,10 +105,20 @@ def query_to_entity(world, query_list, mode,
     for elem in query_list:
         if elem in world.get_room_names() and not room:
             room = elem
+            resolved_queries.add(elem)
         if Location.metadata.has_category(elem) and not loc_category:
             loc_category = elem
+            resolved_queries.add(elem)
         if Object.metadata.has_category(elem) and not obj_category:
             obj_category = elem
+            resolved_queries.add(elem)
+
+    # If any query elements are unaccounted for (for example, in the case of a nonexistent object or garbage value),
+    # then entity resolution should fail.
+    for elem in query_list:
+        if elem not in resolved_queries:
+            warnings.warn(f"Did not resolve query element {elem}. Returning None.")
+            return None
 
     # Special case: A room is selected purely by name
     if room and not named_location and not loc_category and not obj_category:
@@ -115,7 +127,7 @@ def query_to_entity(world, query_list, mode,
     # If a named location is given, check that have an object category and filter by that.
     # Otherwise, just use the named location itself.
     if named_location is not None:
-        if obj_category is None:
+        if obj_category is None and mode == "location":
             return named_location
         else:
             if isinstance(named_location, ObjectSpawn):
@@ -125,10 +137,10 @@ def query_to_entity(world, query_list, mode,
                 for spawn in named_location.children:
                     entity_list.extend(spawn.children)
 
-        entity_list = [o for o in entity_list if o.category == obj_category]
-        obj_candidate = apply_resolution_strategy(world, entity_list,
-                                                  resolution_strategy=resolution_strategy,
-                                                  robot=robot)
+        entity_list = [obj for obj in entity_list if obj.category == obj_category]
+        obj_candidate = apply_resolution_strategy(
+            entity_list, resolution_strategy=resolution_strategy, robot=robot
+        )
         if not obj_candidate:
             warnings.warn(f"Could not resolve query {query_list}")
         else:
@@ -138,11 +150,15 @@ def query_to_entity(world, query_list, mode,
                 return obj_candidate.parent
 
     # Resolve a location from any other query
-    if obj_category or mode=="object":
-        obj_candidate = resolve_to_object(world, category=obj_category, 
-                                          location=loc_category, room=room,
-                                          resolution_strategy=resolution_strategy,
-                                          robot=robot)
+    if obj_category or mode == "object":
+        obj_candidate = resolve_to_object(
+            world,
+            category=obj_category,
+            location=loc_category,
+            room=room,
+            resolution_strategy=resolution_strategy,
+            robot=robot,
+        )
         if not obj_candidate:
             warnings.warn(f"Could not resolve query {query_list}")
         else:
@@ -151,20 +167,31 @@ def query_to_entity(world, query_list, mode,
             elif mode == "location":
                 return obj_candidate.parent
     else:
-        loc_candidate = resolve_to_location(world, category=loc_category, room=room,
-                                            resolution_strategy=resolution_strategy,
-                                            robot=robot)
+        loc_candidate = resolve_to_location(
+            world,
+            category=loc_category,
+            room=room,
+            resolution_strategy=resolution_strategy,
+            robot=robot,
+        )
         if not loc_candidate:
             warnings.warn(f"Could not resolve query {query_list}")
         else:
             return loc_candidate
-    
 
-def resolve_to_location(world, category=None, room=None,
-                        resolution_strategy="first", robot=None,
-                        expand_locations=False):
-    """ 
-    Resolves a category/room query combination to a single specific location. 
+    return None
+
+
+def resolve_to_location(
+    world,
+    category=None,
+    room=None,
+    resolution_strategy="first",
+    robot=None,
+    expand_locations=False,
+):
+    """
+    Resolves a category/room query combination to a single specific location.
 
     :param world: World model.
     :type world: :class:`pyrobosim.core.world.World`
@@ -181,6 +208,8 @@ def resolve_to_location(world, category=None, room=None,
     :return: The location or object spawn that meets the category and/or room filters, or None.
     :rtype: :class:`pyrobosim.core.locations.Location`/:class:`pyrobosim.core.locations.ObjectSpawn`
     """
+    from ..core.locations import Location
+
     if room is None:
         room_name = None
         if category is None:
@@ -198,7 +227,8 @@ def resolve_to_location(world, category=None, room=None,
             possible_locations = [loc for loc in room.locations]
         else:
             possible_locations = [
-                loc for loc in room.locations if loc.category == category]
+                loc for loc in room.locations if loc.category == category
+            ]
 
     # Optionally expand locations to their individual object spawns
     if expand_locations:
@@ -211,17 +241,28 @@ def resolve_to_location(world, category=None, room=None,
     else:
         expanded_locations = possible_locations
 
-    loc = apply_resolution_strategy(world, expanded_locations, resolution_strategy, robot=robot)
+    loc = apply_resolution_strategy(
+        expanded_locations, resolution_strategy, robot=robot
+    )
     if not loc:
-        warnings.warn(f"Could not resolve location query with category: {category}, room: {room_name}.")
+        warnings.warn(
+            f"Could not resolve location query with category: {category}, room: {room_name}."
+        )
         return None
     return loc
 
 
-def resolve_to_object(world, category=None, location=None, room=None, 
-                      resolution_strategy="first", robot=None, ignore_grasped=True):
-    """ 
-    Resolves a category/location/room query to an object 
+def resolve_to_object(
+    world,
+    category=None,
+    location=None,
+    room=None,
+    resolution_strategy="first",
+    robot=None,
+    ignore_grasped=True,
+):
+    """
+    Resolves a category/location/room query to an object
 
     :param world: World model.
     :type world: :class:`pyrobosim.core.world.World`
@@ -229,8 +270,8 @@ def resolve_to_object(world, category=None, location=None, room=None,
     :type category: str, optional
     :param location: Location category search in (e.g. "table")
     :type location: str, optional
-    :param category: Room name to search in (e.g. "kitchen")
-    :type category: str, optional
+    :param room: Room name to search in (e.g. "kitchen")
+    :type room: str, optional
     :param resolution_strategy: Resolution strategy to apply (see :func:`apply_resolution_strategy`)
     :type resolution_strategy: str
     :param robot: If set to a Robot instance, uses that robot for resolution strategy.
@@ -253,20 +294,36 @@ def resolve_to_object(world, category=None, location=None, room=None,
         else:
             room_name = room.name
         possible_objects = [
-            o for o in possible_objects if o.parent.parent.parent.name == room_name]
+            obj
+            for obj in possible_objects
+            if obj.parent.parent.parent.name == room_name
+        ]
 
     if location is not None:
-        possible_objects = [o for o in possible_objects if 
-            (o.parent == location or o.parent.name == location or
-             o.parent.parent == location or o.parent.parent.name == location or
-             o.parent.category == location or o.parent.parent.category == location)]
+        possible_objects = [
+            obj
+            for obj in possible_objects
+            if (
+                obj.parent == location
+                or obj.parent.name == location
+                or obj.parent.parent == location
+                or obj.parent.parent.name == location
+                or obj.parent.category == location
+                or obj.parent.parent.category == location
+            )
+        ]
 
-    if ignore_grasped and robot is not None and robot.manipulated_object in possible_objects:
+    if (
+        ignore_grasped
+        and robot is not None
+        and robot.manipulated_object in possible_objects
+    ):
         possible_objects.remove(robot.manipulated_object)
 
-    obj = apply_resolution_strategy(world, possible_objects,
-                                    resolution_strategy, robot=robot)
+    obj = apply_resolution_strategy(possible_objects, resolution_strategy, robot=robot)
     if not obj:
-        warnings.warn(f"Could not resolve object query with category: {category}, location: {location}, room: {room}.")   
+        warnings.warn(
+            f"Could not resolve object query with category: {category}, location: {location}, room: {room}."
+        )
         return None
     return obj

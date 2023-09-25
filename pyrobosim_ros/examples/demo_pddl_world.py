@@ -6,47 +6,35 @@ Task and Motion Planner such as PDDLStream.
 """
 
 import os
-import sys
+import rclpy
 import threading
 
-from pyrobosim.core.yaml import WorldYamlLoader
+from pyrobosim.core import WorldYamlLoader
+from pyrobosim.gui import start_gui
 from pyrobosim.utils.general import get_data_folder
+from pyrobosim_ros.ros_interface import WorldROSWrapper
 
 
 def load_world():
-    """ Load a test world. """
-    loader = WorldYamlLoader()
-    world_file = "pddlstream_simple_world.yaml"
-    data_folder = get_data_folder()
-    w = loader.from_yaml(os.path.join(data_folder, world_file))
-    return w
-
-
-def start_gui(world, args):
-    """ Initializes GUI """
-    from pyrobosim.gui.main import PyRoboSimGUI
-    app = PyRoboSimGUI(world, args)
-    sys.exit(app.exec_())
+    """Load a test world."""
+    world_file = os.path.join(get_data_folder(), "pddlstream_simple_world.yaml")
+    return WorldYamlLoader().from_yaml(world_file)
 
 
 def create_ros_node():
-    """ Initializes ROS node """
-    import rclpy
+    """Initializes ROS node"""
     rclpy.init()
-
-    from pyrobosim.core.ros_interface import WorldROSWrapper
-    w = load_world()
-    node = WorldROSWrapper(world=w, name="pddl_demo", state_pub_rate=0.1)
+    world = load_world()
+    node = WorldROSWrapper(world=world, name="pddl_demo", state_pub_rate=0.1)
     return node
 
 
 if __name__ == "__main__":
-    n = create_ros_node()
+    node = create_ros_node()
 
     # Start ROS Node in separate thread
-    import threading
-    t = threading.Thread(target=n.start)
-    t.start()
+    ros_thread = threading.Thread(target=lambda: node.start(wait_for_gui=True))
+    ros_thread.start()
 
     # Start GUI in main thread
-    start_gui(n.world, sys.argv)
+    start_gui(node.world)

@@ -1,6 +1,6 @@
 Basic Usage
 ===========
-To get started with pyrobosim, you can run the following examples.
+To get started with ``pyrobosim``, you can run the following examples.
 
 
 Standalone
@@ -30,18 +30,19 @@ click the **Navigate** button. Once at the destination, click **Pick**.
 
 |
 
-With ROS2
----------
+With ROS 2
+----------
 
-First, build and setup the ``colcon`` workspace (or use one of our provided Docker containers).
+First, build and setup the colcon workspace (or use one of our provided Docker containers).
 
 ::
 
+    cd /path/to/colcon/workspace
     colcon build
     . install/local_setup.bash
 
 
-You can run a ROS2 enabled demo and interact with the GUI:
+You can run a ROS 2 enabled demo and interact with the GUI:
 
 ::
 
@@ -64,20 +65,21 @@ Or, you can run both of these nodes together using a provided launch file:
     ros2 launch pyrobosim_ros demo_commands.launch.py mode:=action
 
 
-The first command will start a world as a ROS2 node, and the second one will publish a plan (or set of actions) to the node.
+The first command will start a world as a ROS 2 node, and the second one will publish a plan (or set of actions) to the node.
 
 .. image:: ../media/pyrobosim_demo_ros.png
     :align: center
     :width: 600px
-    :alt: Basic ROS2 demo.
+    :alt: Basic ROS 2 demo.
 
 |
 
 Creating Worlds
 ---------------
-Worlds can be created either with the pyrobosim API, or loaded from a YAML file using the :doc:`WorldYamlLoader </generated/pyrobosim.core.yaml.WorldYamlLoader>` utility:
+Worlds can be created either with the ``pyrobosim`` API, or loaded from a YAML file using the :doc:`WorldYamlLoader </generated/pyrobosim.core.yaml_utils.WorldYamlLoader>` utility:
 
-By default, ``demo.py`` creates a world using the API, but you can alternatively try a demo YAML file using the ``--world-file`` argument. For example:
+By default, ``demo.py`` creates a world using the API, but you can alternatively try a demo YAML file using the ``--world-file`` argument.
+For example:
 
 ::
 
@@ -108,17 +110,17 @@ You can then follow the steps to see the generated world.
 .. image:: ../media/gazebo_demo_world.png
     :align: center
     :width: 600px
-    :alt: Example world exported to Gazebo classic.
+    :alt: Example world exported to Gazebo.
 
-If you add the ``--ignition`` flag to this demo, you can similarly export to Ignition Gazebo!
+If you add the ``--classic`` flag to this demo, you can similarly export to Gazebo Classic.
 
 ::
 
-    ros2 run pyrobosim_ros demo_world_save.py --ignition
+    ros2 run pyrobosim_ros demo_world_save.py --classic
 
-.. image:: ../media/ignition_demo_world.png
+.. image:: ../media/gazebo_classic_demo_world.png
     :align: center
     :width: 600px
-    :alt: Example world exported to Ignition Gazebo.
+    :alt: Example world exported to Gazebo Classic.
 
 |

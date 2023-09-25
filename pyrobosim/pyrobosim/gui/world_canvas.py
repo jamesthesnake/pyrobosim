@@ -4,11 +4,34 @@ import adjustText
 import numpy as np
 import time
 import threading
+import warnings
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.pyplot import Circle
 from matplotlib.transforms import Affine2D
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import pyqtSignal, QThread
+
+from pyrobosim.utils.motion import Path
+
+
+class NavAnimator(QThread):
+    """
+    Helper class that wraps navigation animation in a QThread.
+    """
+
+    def __init__(self, canvas):
+        """
+        Creates a navigation monitor thread.
+
+        :param canvas: A world canvas object linked to this thread.
+        :type canvas: :class:`pyrobosim.gui.world_canvas.WorldCanvas`
+        """
+        super(NavAnimator, self).__init__()
+        self.canvas = canvas
+
+    def run(self):
+        """Runs the navigation monitor thread."""
+        self.canvas.monitor_nav_animation()
 
 
 class WorldCanvas(FigureCanvasQTAgg):
@@ -29,8 +52,11 @@ class WorldCanvas(FigureCanvasQTAgg):
     robot_zorder = 3
     """ zorder for robot visualization. """
 
-    nav_trigger = pyqtSignal(str, str)
-    """ Signal to trigger navigation method in a thread-safe way. """
+    nav_trigger = pyqtSignal(str, str, Path)
+    """ Signal to trigger navigation method in a thread-safe manner. """
+
+    draw_lock = threading.Lock()
+    """ Lock for drawing on the canvas in a thread-safe manner. """
 
     def __init__(self, world, dpi=100):
         """
@@ -57,7 +83,7 @@ class WorldCanvas(FigureCanvasQTAgg):
         self.robot_bodies = []
         self.robot_dirs = []
         self.robot_lengths = []
-        self.path_planner_artists = []
+        self.path_planner_artists = {"graph": [], "path": []}
 
         # Debug displays (TODO: Should be available from GUI).
         self.show_collision_polygons = False
@@ -65,18 +91,22 @@ class WorldCanvas(FigureCanvasQTAgg):
         # Connect triggers for thread-safe execution.
         self.nav_trigger.connect(self.navigate_in_thread)
 
-        self.draw_lock = False
-
-        # Start thread for monitoring robot navigation state.
-        self.nav_animator = threading.Thread(target=self.monitor_nav_animation)
+        # Start thread for animating robot navigation state.
+        self.nav_animator = NavAnimator(self)
         self.nav_animator.start()
 
     def show_robots(self):
         """Draws robots as circles with heading lines for visualization."""
         n_robots = len(self.world.robots)
-        self.robot_bodies = n_robots*[None]
-        self.robot_dirs = n_robots*[None]
-        self.robot_lengths = n_robots*[None]
+        for b in self.robot_bodies:
+            b.remove()
+        for d in self.robot_dirs:
+            b.remove()
+        for l in self.robot_lengths:
+            l.remove()
+        self.robot_bodies = n_robots * [None]
+        self.robot_dirs = n_robots * [None]
+        self.robot_lengths = n_robots * [None]
 
         for i, robot in enumerate(self.world.robots):
             p = robot.pose
@@ -86,13 +116,14 @@ class WorldCanvas(FigureCanvasQTAgg):
                 edgecolor=robot.color,
                 fill=False,
                 linewidth=2,
-                zorder=self.robot_zorder)
+                zorder=self.robot_zorder,
+            )
             self.axes.add_patch(self.robot_bodies[i])
 
             robot_length = self.robot_dir_line_factor * robot.radius
             (self.robot_dirs[i],) = self.axes.plot(
-                p.x + np.array([0, robot_length * np.cos(p.yaw)]),
-                p.y + np.array([0, robot_length * np.sin(p.yaw)]),
+                p.x + np.array([0, robot_length * np.cos(p.get_yaw())]),
+                p.y + np.array([0, robot_length * np.sin(p.get_yaw())]),
                 linestyle="-",
                 color=robot.color,
                 linewidth=2,
@@ -103,9 +134,14 @@ class WorldCanvas(FigureCanvasQTAgg):
             x = p.x
             y = p.y - 2.0 * robot.radius
             robot.viz_text = self.axes.text(
-                x, y, robot.name, clip_on=True, color=robot.color,
-                horizontalalignment="center", verticalalignment="top",
-                fontsize=10
+                x,
+                y,
+                robot.name,
+                clip_on=True,
+                color=robot.color,
+                horizontalalignment="center",
+                verticalalignment="top",
+                fontsize=10,
             )
         self.robot_texts = [r.viz_text for r in (self.world.robots)]
 
@@ -164,12 +200,9 @@ class WorldCanvas(FigureCanvasQTAgg):
         self.obj_patches = [o.viz_patch for o in (self.world.objects)]
         self.obj_texts = [o.viz_text for o in (self.world.objects)]
 
-        # Path planner and path
+        # Show paths and planner graphs
         if len(self.world.robots) > 0:
-            robot_to_show = self.world.robots[0]
-        else:
-            robot_to_show = None
-        self.show_planner_and_path(robot_to_show)
+            self.show_planner_and_path(robot=self.world.robots[0])
 
         self.axes.autoscale()
         self.axes.axis("equal")
@@ -177,14 +210,13 @@ class WorldCanvas(FigureCanvasQTAgg):
 
     def draw_and_sleep(self):
         """Redraws the figure and waits a small amount of time."""
-        if self.draw_lock:
+        if self.draw_lock.locked():
             return
-
-        self.draw_lock = True
+        self.draw_lock.acquire()
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
         time.sleep(0.001)
-        self.draw_lock = False
+        self.draw_lock.release()
 
     def get_animated_artists(self):
         """Returns a list of artists to animate when blitting."""
@@ -204,31 +236,31 @@ class WorldCanvas(FigureCanvasQTAgg):
             # Check if any robot is currently navigating.
             nav_status = [robot.executing_nav for robot in self.world.robots]
             if any(nav_status):
-                active_robot_indices = [i for i, status in enumerate(nav_status) if status]
-                
+                active_robot_indices = [
+                    i for i, status in enumerate(nav_status) if status
+                ]
+
                 # Update the animation.
                 self.update_robots_plot()
-                for idx in active_robot_indices:    
-                    self.update_object_plot(
-                        self.world.robots[idx].manipulated_object)
                 self.show_world_state(
-                    self.world.robots[active_robot_indices[0]],
-                    navigating=True)
+                    self.world.robots[active_robot_indices[0]], navigating=True
+                )
                 self.draw_and_sleep()
 
                 # Check if GUI buttons should be disabled
                 if self.world.has_gui and self.world.gui.layout_created:
                     cur_robot = self.world.gui.get_current_robot()
-                    is_cur_robot_moving = cur_robot in self.world.robots and \
-                                          cur_robot.executing_nav
+                    is_cur_robot_moving = (
+                        cur_robot in self.world.robots and cur_robot.executing_nav
+                    )
                     self.world.gui.set_buttons_during_action(not is_cur_robot_moving)
-            
+
             else:
                 # If the GUI button states did not toggle correctly, force them
                 # to be active once no robots are moving.
                 if self.world.has_gui and self.world.gui.layout_created:
                     self.world.gui.set_buttons_during_action(True)
-            
+
             time.sleep(sleep_time)
 
     def adjust_text(self, objs):
@@ -240,26 +272,7 @@ class WorldCanvas(FigureCanvasQTAgg):
         """
         adjustText.adjust_text(objs, lim=100, add_objects=self.obj_patches)
 
-    def show_path(self, path, robot=None):
-        """
-        Plots a standalone path.
-
-        :param path: The path to display.
-        :type path: :class:`pyrobosim.utils.motion.Path`
-        """
-        for e in self.path_planner_artists:
-            self.axes.lines.remove(e)
-        self.path_planner_artists = []
-        x = [p.x for p in path.poses]
-        y = [p.y for p in path.poses]
-        color = robot.color if robot is not None else "m"
-        (path,) = self.axes.plot(x, y, linestyle="-", color=color,
-                                 linewidth=3, zorder=1)
-        (start,) = self.axes.plot(x[0], y[0], "go", zorder=2)
-        (goal,) = self.axes.plot(x[-1], y[-1], "rx", zorder=2)
-        self.path_planner_artists.extend((path, start, goal))
-
-    def show_planner_and_path(self, robot=None):
+    def show_planner_and_path(self, robot=None, path=None):
         """
         Plot the path planner and latest path, if specified.
         This planner could be global (property of the world)
@@ -267,32 +280,48 @@ class WorldCanvas(FigureCanvasQTAgg):
 
         :param robot: If set to a Robot instance, uses that robot for display.
         :type robot: :class:`pyrobosim.core.robot.Robot`, optional
+        :param path: Path to goal location, defaults to None.
+        :type path: :class:`pyrobosim.utils.motion.Path`, optional
         """
         # Since removing artists while drawing can cause issues,
         # this function should also lock drawing.
-        while self.draw_lock:
-            time.sleep(0.001)
-        self.draw_lock = True
-        for e in self.path_planner_artists:
-            self.axes.lines.remove(e)
+        self.draw_lock.acquire()
 
         color = robot.color if robot is not None else "m"
-
         if robot and robot.path_planner:
-            self.path_planner_artists = robot.path_planner.plot(
-                self.axes, path_color=color)
-        elif self.world.path_planner:
-            self.path_planner_artists = self.world.path_planner.plot(
-                self.axes, path_color=color)
-        self.draw_lock = False
+            path_planner_artists = robot.path_planner.plot(
+                self.axes, path=path, path_color=color
+            )
+
+            for artist in self.path_planner_artists["graph"]:
+                artist.remove()
+            self.path_planner_artists["graph"] = path_planner_artists.get("graph", [])
+
+            for artist in self.path_planner_artists["path"]:
+                artist.remove()
+            self.path_planner_artists["path"] = path_planner_artists.get("path", [])
+
+        else:
+            if not robot:
+                warnings.warn("No robot found")
+            elif not robot.path_planner:
+                warnings.warn("Robot does not have a planner")
+
+        self.draw_lock.release()
 
     def update_robots_plot(self):
         """Updates the robot visualization graphics objects."""
+        if len(self.world.robots) != len(self.robot_bodies):
+            self.show_robots()
         for i, robot in enumerate(self.world.robots):
             p = robot.pose
             self.robot_bodies[i].center = p.x, p.y
-            self.robot_dirs[i].set_xdata(p.x + np.array([0, self.robot_lengths[i] * np.cos(p.yaw)]))
-            self.robot_dirs[i].set_ydata(p.y + np.array([0, self.robot_lengths[i] * np.sin(p.yaw)]))
+            self.robot_dirs[i].set_xdata(
+                p.x + np.array([0, self.robot_lengths[i] * np.cos(p.get_yaw())])
+            )
+            self.robot_dirs[i].set_ydata(
+                p.y + np.array([0, self.robot_lengths[i] * np.sin(p.get_yaw())])
+            )
             robot.viz_text.set_position((p.x, p.y - 2.0 * robot.radius))
             self.update_object_plot(robot.manipulated_object)
 
@@ -313,7 +342,11 @@ class WorldCanvas(FigureCanvasQTAgg):
                 if robot_loc is not None:
                     title_bits.append(f"Location: {robot_loc.name}")
             elif robot.location is not None:
-                title_bits.append(f"Location: {robot.location.name}")
+                if isinstance(robot.location, str):
+                    robot_loc = robot.location
+                else:
+                    robot_loc = robot.location.name
+                title_bits.append(f"Location: {robot_loc}")
             if robot.manipulated_object is not None:
                 title_bits.append(f"Holding: {robot.manipulated_object.name}")
             title_str = f"[{robot.name}] " + ", ".join(title_bits)
@@ -332,7 +365,7 @@ class WorldCanvas(FigureCanvasQTAgg):
         tf = (
             Affine2D()
             .translate(-obj.centroid[0], -obj.centroid[1])
-            .rotate(obj.pose.yaw)
+            .rotate(obj.pose.get_yaw())
             .translate(obj.pose.x, obj.pose.y)
         )
         obj.viz_patch.set_transform(tf + self.axes.transData)
@@ -342,7 +375,7 @@ class WorldCanvas(FigureCanvasQTAgg):
         y = obj.pose.y + 1.0 * (ymax - ymin)
         obj.viz_text.set_position((x, y))
 
-    def navigate_in_thread(self, robot, goal):
+    def navigate_in_thread(self, robot, goal, path=None):
         """
         Starts a thread to navigate a robot to a goal.
 
@@ -350,15 +383,17 @@ class WorldCanvas(FigureCanvasQTAgg):
         :type robot: :class:`pyrobosim.core.robot.Robot` or str
         :param goal: Name of goal location (resolved by the world model).
         :type goal: str
+        :param path: Path to goal location, defaults to None.
+        :type path: :class:`pyrobosim.utils.motion.Path`, optional
         :return: True if navigation succeeds, else False
         :rtype: bool
         """
         if isinstance(robot, str):
             robot = self.world.get_robot_by_name(robot)
-        t = threading.Thread(target=self.navigate, args=(robot, goal))
-        t.start()
+        nav_thread = threading.Thread(target=self.navigate, args=(robot, goal, path))
+        nav_thread.start()
 
-    def navigate(self, robot, goal):
+    def navigate(self, robot, goal, path=None):
         """
         Animates a path to a goal location using a robot's path executor.
 
@@ -366,30 +401,36 @@ class WorldCanvas(FigureCanvasQTAgg):
         :type robot: :class:`pyrobosim.core.robot.Robot`
         :param goal: Name of goal location (resolved by the world model).
         :type goal: str
+        :param path: Path to goal location, defaults to None.
+        :type path: :class:`pyrobosim.utils.motion.Path`, optional
         :return: True if navigation succeeds, else False
         :rtype: bool
         """
 
         # Find a path, or use an existing one, and start the navigation thread.
-        if not robot.current_path or robot.current_path.num_poses < 1:
-            path = self.world.find_path(goal, robot=robot)
-            self.show_planner_and_path(robot)
-        else:
-            path = robot.current_path
-            robot.current_goal = self.world.get_entity_by_name(goal)
-            self.show_path(path, robot=robot)
-        robot.follow_path(
-            path,
-            target_location=robot.current_goal,
-            realtime_factor=self.realtime_factor,
-        )
+        if robot and robot.path_planner:
+            goal_node = self.world.graph_node_from_entity(goal, robot=robot)
+            if not path or path.num_poses < 2:
+                path = robot.plan_path(robot.pose, goal_node.pose)
+            self.show_planner_and_path(robot=robot, path=path)
+            robot.follow_path(
+                path,
+                target_location=goal_node.parent,
+                realtime_factor=self.realtime_factor,
+                blocking=False,
+            )
 
-        # Sleep while the robot is executing the action.
-        while robot.executing_nav:
-            time.sleep(0.1)
-        return True
+            # Sleep while the robot is executing the action.
+            while robot.executing_nav:
+                time.sleep(0.1)
 
-    def pick_object(self, robot, obj_name):
+            self.show_world_state(robot=robot)
+            self.draw_and_sleep()
+            return True
+
+        return False
+
+    def pick_object(self, robot, obj_name, grasp_pose=None):
         """
         Picks an object with a specified robot.
 
@@ -397,11 +438,13 @@ class WorldCanvas(FigureCanvasQTAgg):
         :type robot: :class:`pyrobosim.core.robot.Robot`
         :param obj_name: The name of the object.
         :type obj_name: str
+        :param grasp_pose: A pose describing how to manipulate the object.
+        :type grasp_pose: :class:`pyrobosim.utils.pose.Pose`, optional
         :return: True if picking succeeds, else False
         :rtype: bool
         """
         if robot is not None:
-            success = robot.pick_object(obj_name)
+            success = robot.pick_object(obj_name, grasp_pose)
             if success:
                 self.update_object_plot(robot.manipulated_object)
                 self.show_world_state(robot)
@@ -427,7 +470,6 @@ class WorldCanvas(FigureCanvasQTAgg):
             obj.viz_patch.remove()
             success = robot.place_object(pose=pose)
             self.axes.add_patch(obj.viz_patch)
-            self.update_object_plot(obj)
             self.show_world_state(robot)
             self.draw_and_sleep()
             return success
