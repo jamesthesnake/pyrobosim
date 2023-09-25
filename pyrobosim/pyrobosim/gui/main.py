@@ -1,7 +1,10 @@
 """ Main utilities for pyrobosim GUI. """
 
 import numpy as np
+import sys
+
 from PyQt5 import QtWidgets
+from PyQt5.QtCore import QTimer
 from matplotlib.backends.qt_compat import QtCore
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT
 
@@ -9,20 +12,41 @@ from .world_canvas import WorldCanvas
 from ..utils.knowledge import query_to_entity
 
 
+def start_gui(world):
+    """
+    Helper function to start a pyrobosim GUI for a world model.
+
+    :param world: World object to attach to the GUI.
+    :type world: :class:`pyrobosim.core.world.World`
+    """
+    app = PyRoboSimGUI(world, sys.argv)
+
+    timer = QTimer(parent=app)
+    timer.timeout.connect(lambda: None)
+    timer.start(1000)
+
+    sys.exit(app.exec_())
+
+
 class PyRoboSimGUI(QtWidgets.QApplication):
     """Main pyrobosim GUI class."""
 
-    def __init__(self, world, args):
+    def __init__(self, world, args, show=True):
         """
         Creates an instance of the pyrobosim GUI.
 
         :param world: World object to attach to the GUI.
         :type world: :class:`pyrobosim.core.world.World`
+        :param args: System arguments, needed by the QApplication constructor.
+        :type args: list[str]
+        :param show: If true (default), shows the GUI. Otherwise runs headless for testing.
+        :type show: bool, optional
         """
         super(PyRoboSimGUI, self).__init__(args)
         self.world = world
         self.main_window = PyRoboSimMainWindow(world)
-        self.main_window.show()
+        if show:
+            self.main_window.show()
 
 
 class PyRoboSimMainWindow(QtWidgets.QMainWindow):
@@ -167,7 +191,8 @@ class PyRoboSimMainWindow(QtWidgets.QMainWindow):
             return None
 
         sampled_pose = self.world.sample_free_robot_pose_uniform(
-            robot, ignore_robots=False)
+            robot, ignore_robots=False
+        )
         if sampled_pose is not None:
             robot.set_pose(sampled_pose)
             if robot.manipulated_object is not None:
@@ -193,15 +218,18 @@ class PyRoboSimMainWindow(QtWidgets.QMainWindow):
         if robot and robot.executing_action:
             return
 
-        query_list = self.goal_textbox.text().split(" ")
+        query_list = [elem for elem in self.goal_textbox.text().split(" ") if elem]
         loc = query_to_entity(
-            self.world, query_list, mode="location", robot=robot,
-            resolution_strategy="nearest"
+            self.world,
+            query_list,
+            mode="location",
+            robot=robot,
+            resolution_strategy="nearest",
         )
         if not loc:
             return
 
-        print(f"[{robot.name}] Navigating to {loc.name}")
+        print(f"[{robot.name}] Navigating to {loc}")
         self.canvas.navigate_in_thread(robot, loc)
 
     def on_pick_click(self):
@@ -209,14 +237,20 @@ class PyRoboSimMainWindow(QtWidgets.QMainWindow):
         robot = self.get_current_robot()
         if robot:
             loc = robot.location
-            query_list = [loc] + self.goal_textbox.text().split(" ")
+            query_list = [elem for elem in self.goal_textbox.text().split(" ") if elem]
+            if loc:
+                query_list.append(loc.name)
             obj = query_to_entity(
-                self.world, query_list, mode="object", robot=robot,
-                resolution_strategy="nearest"
+                self.world,
+                query_list,
+                mode="object",
+                robot=robot,
+                resolution_strategy="nearest",
             )
-            print(f"[{robot.name}] Picking {obj.name}")
-            self.canvas.pick_object(robot, obj)
-            self.update_manip_state()
+            if obj:
+                print(f"[{robot.name}] Picking {obj.name}")
+                self.canvas.pick_object(robot, obj)
+                self.update_manip_state()
 
     def on_place_click(self):
         """Callback to place an object."""
@@ -225,4 +259,3 @@ class PyRoboSimMainWindow(QtWidgets.QMainWindow):
             print(f"[{robot.name}] Placing {robot.manipulated_object.name}")
             self.canvas.place_object(robot)
             self.update_manip_state()
-

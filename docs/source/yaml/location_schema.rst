@@ -11,9 +11,9 @@ The generic location schema, where ``<angle brackets>`` are placeholders, is:
        type: <footprint_type>
        <property>: <footprint_property>
      nav_poses:
-       - [<x1>, <y1>, <yaw1>]
+       - [<x1>, <y1>, <z1>, <yaw1>]
        - ...
-       - [<xN>, <yN>, <yawN>]
+       - [<xN>, <yN>, <zN>, <yawN>]
      locations:
        - name: <location_name>
          footprint:
@@ -31,21 +31,21 @@ Examples
 A simple object with a box footprint and one object spawn that inherits parent geometry.
 
 .. code-block:: yaml
-    
+
    table:                       # Category name is "table"
      footprint:                 # The overall location footprint is this box
        type: box
        dims: [0.9, 1.2]
        height: 0.5              # 0.5 m off the ground
-  nav_poses:                    # List of navigation poses around the location origin
-    - [-0.75, 0, 0]             # (the children below will inherit the parent's poses)
-    - [0.75, 0, 3.14]
-  locations:                    # List of locations
-    - name: "tabletop"          # The location name will be "<loc_name>_tabletop"
-      footprint:
-        type: parent            # "parent" footprint means we inherit parent's box geometry
-        padding: 0.1            # 10 cm padding relative to the parent geometry
-  color: [0.2, 0, 0]            # Dark red
+     nav_poses:                 # List of navigation poses around the location origin
+       - [-0.75, 0, 0]          # (the children below will inherit the parent's poses)
+       - [0.75, 0, 0.0, 3.14]
+     locations:                 # List of locations
+       - name: "tabletop"       # The location name will be "<loc_name>_tabletop"
+         footprint:
+           type: parent         # "parent" footprint means we inherit parent's box geometry
+           padding: 0.1         # 10 cm padding relative to the parent geometry
+     color: [0.2, 0, 0]         # Dark red
 
 A more complex object with a box footprint and two separate object spawns.
 
@@ -58,7 +58,7 @@ A more complex object with a box footprint and two separate object spawns.
        height: 0.75             # 0.75 m off the ground
      locations:                 # List of locations with their own geometries and navigation poses
        - name: "left"           # The location name will be "<loc_name>_left"
-         footprint: 
+         footprint:
            type: polygon
            coords:
              - [-0.25, -0.25]
@@ -67,10 +67,10 @@ A more complex object with a box footprint and two separate object spawns.
              - [-0.25, 0.25]
            offset: [0.3, 0]
          nav_poses:
-           - [0, 0.5, -1.57]
-           - [0, -0.5, 1.57]
+           - [0, 0.5, 0.0, -1.57]
+           - [0, -0.5, 0.0, 1.57]
        - name: "right"         # The location name will be "<loc_name>_right"
-         footprint: 
+         footprint:
            type: polygon
            coords:
              - [-0.25, -0.25]
@@ -79,8 +79,8 @@ A more complex object with a box footprint and two separate object spawns.
              - [-0.25, 0.25]
            offset: [-0.3, 0]
          nav_poses:
-           - [0, 0.5, -1.57]
-           - [0, -0.5, 1.57]
+           - [0, 0.5, 0.0, -1.57]
+           - [0, -0.5, 0.0, 1.57]
      color: [0, 0.2, 0]        # Dark green
 
 A location with a footprint read from a mesh file.
@@ -100,6 +100,6 @@ but you can specify an absolute path as well or create your own tokens.
            type: parent
            padding: 0.05
      nav_poses:             # Navigation poses must still be specified manually
-       - [0.5, 0.0, 3.14]
-       - [-0.5, 0.0, 0.0]
+       - [0.5, 0.0, 0.0, 3.14]
+       - [-0.5, 0.0, 0.0, 0.0]
      color: [0, 0.35, 0.2]  # Greenish-blue

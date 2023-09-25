@@ -11,7 +11,9 @@ python:
   install:
     - method: pip
       path: pyrobosim
+    - method: pip
+      path: pyrobosim_ros
 
 # Build documentation in the Sphinx source directory
 sphinx:
-   configuration: docs/source/conf.py
+  configuration: docs/source/conf.py
